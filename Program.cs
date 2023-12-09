@@ -18,15 +18,11 @@ namespace Training
         
         static void Main(string[] args)
         {
-            // ChomeDriver 인스턴스 생성
             using (IWebDriver driver = new ChromeDriver())
             {
+                driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(2); // 대기 시간 설정
                 driver.Url = "https://www.g2b.go.kr/index.jsp"; // 나라장터 URL로 접속
                 Console.WriteLine("나라장터 접속");
-
-                // 대기 설정. (find로 객체를 찾을 때까지 검색이 되지 않으면 대기하는 시간 초단위)
-                driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(2);
-
 
                 //오늘 날짜 가져오기
                 DateTime startDate = DateTime.Now.AddDays(-4); //오늘 포함 최근 5일 데이터 가져오는 것으로 설정
@@ -36,28 +32,23 @@ namespace Training
 
                 //시작날짜 입력란에 날짜 삽입
                 var startDateBtn = driver.FindElement(By.Id("fromBidDt"));
-                startDateBtn.Clear(); //기본 값 삭제
+                startDateBtn.Clear(); //기본 값(한 달 전) 삭제
                 startDateBtn.SendKeys(startDateString);
 
-                Thread.Sleep(1000);
-                //rpa를 공고명에 넣고 검색(예외처리 필요)
-                driver.FindElement(By.XPath("//*[@id='bidNm']")).SendKeys("RPA");
-
-
-                // xpath로 검색 버튼을 찾는다. 
-                var searchBtn = driver.FindElement(By.XPath("//*[@id='searchForm']/div/fieldset[1]/ul/li[4]/dl/dd[3]/a"));
+                //rpa를 공고명에 넣고 검색
+                driver.FindElement(By.XPath("//*[@id='bidNm']")).SendKeys("RPA"); //검색창
+                var searchBtn = driver.FindElement(By.XPath("//*[@id='searchForm']/div/fieldset[1]/ul/li[4]/dl/dd[3]/a")); //검색 버튼
                 Console.WriteLine("검색버튼 찾음");
                 driver.ClickScript(searchBtn);
-
-                Thread.Sleep(3000);
+                
                 //모든 데이터 가져오기
-                GetData(driver, "rpa");
+                GetData(driver, "RPA");
 
-                Thread.Sleep(10000);
+                Thread.Sleep(5000);
             }
             
             // 아무 키나 누르면 종료
-            Console.WriteLine("Press any key...");
+            Console.WriteLine("프로그램 종료");
             Console.ReadKey();
         }
 
@@ -74,7 +65,6 @@ namespace Training
         }
 
         //RPA가 정확하게 포함된 데이터만 가져오기
-        //예를 들어 copter parts는 rpa를 포함하고 있지만 우리가 원하는 데이터가 아니다.
         static void GetData(IWebDriver driver, string keyward)
         {
             //frame 안에 있는경우 따로 처리
@@ -85,46 +75,61 @@ namespace Training
             var cols = table.FindElements(By.TagName("tr"));
             int index = 1;
 
-            string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);  // 바탕화면 경로
-            string path = Path.Combine(desktopPath, "장표.xlsx"); // 엑셀 파일 저장 경로
-            FileInfo file = new FileInfo(path);
-
-            
-            using(ExcelPackage package = new ExcelPackage(file))
+            foreach (var row in cols)
             {
-                ExcelWorksheet worksheet = package.Workbook.Worksheets[0];
-                var dimension = worksheet.Dimension;
-                int lastRow = dimension.End.Row;
-                int newRow = lastRow + 1;
-                
-                foreach (var row in cols)
+                var name = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[4]/div/a")).Text;
+                if (name.Contains(keyward))
                 {
-                    var name = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[4]/div/a"));
-                    if (name.Text.Contains("RPA"))
-                    {
-                        var announce = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr["+ index + "]/td[5]/div"));
-                        var demand = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr["+ index +"]/td[6]/div"));
-                        var deadLine = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[8]/div"));
-                        var childElements = deadLine.FindElements(By.XPath("./*"));
-                        string spanText = deadLine.FindElement(By.TagName("span")).Text;
-                        string allText = deadLine.Text;
-                        string stringDeadLine = allText.Replace(spanText, "").Trim();
-                        int start = 1;
-                        // 해당 행 출력 또는 저장 등 필요한 작업 수행
-                        worksheet.Cells[newRow, start++].Value = name.Text;
-                        worksheet.Cells[newRow, start++].Value = "RPA";
-                        worksheet.Cells[newRow, start++].Value = announce.Text;
-                        worksheet.Cells[newRow, start++].Value = demand.Text;
-                        worksheet.Cells[newRow, start++].Value = stringDeadLine;
-                        worksheet.Cells[newRow, start++].Value = DateTime.Now.ToString("yyyy/MM/dd");
-                        newRow++;
-                    }
-                    index++;
+                    var announce = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[5]/div")).Text;
+                    var demand = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[6]/div")).Text;
+                    var deadLine = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[8]/div"));
+                    var childElements = deadLine.FindElements(By.XPath("./*"));
+                    string spanText = deadLine.FindElement(By.TagName("span")).Text;
+                    string allText = deadLine.Text;
+                    string stringDeadLine = allText.Replace(spanText, "").Trim();
+
+                    // 해당 행 출력 또는 저장 등 필요한 작업 수행
+                    saveExcel(name, keyward, announce, demand, stringDeadLine);
                 }
-                package.Save();
+                index++;
             }
-            Console.WriteLine("데이터가 성공적으로 추가되었습니다.");
         }
 
+        static void saveExcel(string name, string keyword, string announce, string demand, string deadLine)
+        {
+            try
+            {
+                string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);  // 바탕화면 경로
+                string path = Path.Combine(desktopPath, "장표.xlsx"); // 엑셀 파일 저장 경로
+                FileInfo file = new FileInfo(path);
+
+                using (ExcelPackage package = new ExcelPackage(file))
+                {
+                    ExcelWorksheet worksheet = package.Workbook.Worksheets[0];
+                    var dimension = worksheet.Dimension;
+                    int lastRow = dimension.End.Row;
+                    int newRow = lastRow + 1; //마지막 행 다음줄
+
+                    int start = 1; //열 위치
+                    worksheet.Cells[newRow, start++].Value = name;
+                    worksheet.Cells[newRow, start++].Value = keyword;
+                    worksheet.Cells[newRow, start++].Value = announce;
+                    worksheet.Cells[newRow, start++].Value = demand;
+                    worksheet.Cells[newRow, start++].Value = deadLine;
+                    worksheet.Cells[newRow, start++].Value = DateTime.Now.ToString("yyyy/MM/dd hh:mm");
+                    package.Save();
+                    Console.WriteLine("데이터가 성공적으로 추가되었습니다.");
+                }
+            }
+            catch(InvalidOperationException err)
+            {
+                Console.WriteLine("장표 엑셀 파일이 열려있을 확률이 높습니다.");
+                Console.WriteLine("err message: " + err);
+            }
+            catch(IndexOutOfRangeException err)
+            {
+                Console.WriteLine("장표 파일이 바탕화면에 없습니다");
+            }
+        }
     }
 }
