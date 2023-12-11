@@ -7,7 +7,6 @@ using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium;
 using System.Threading;
 using OpenQA.Selenium.Support.UI;
-using Excel = Microsoft.Office.Interop.Excel;
 using System.IO;
 using OfficeOpenXml;
 
@@ -15,14 +14,13 @@ namespace Training
 {
     static class Program
     {
-        
+
         static void Main(string[] args)
         {
             using (IWebDriver driver = new ChromeDriver())
             {
                 driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(2); // 대기 시간 설정
                 driver.Url = "https://www.g2b.go.kr/index.jsp"; // 나라장터 URL로 접속
-                Console.WriteLine("나라장터 접속");
 
                 //오늘 날짜 가져오기
                 DateTime startDate = DateTime.Now.AddDays(-4); //오늘 포함 최근 5일 데이터 가져오는 것으로 설정
@@ -38,19 +36,34 @@ namespace Training
                 //rpa를 공고명에 넣고 검색
                 driver.FindElement(By.XPath("//*[@id='bidNm']")).SendKeys("RPA"); //검색창
                 var searchBtn = driver.FindElement(By.XPath("//*[@id='searchForm']/div/fieldset[1]/ul/li[4]/dl/dd[3]/a")); //검색 버튼
-                Console.WriteLine("검색버튼 찾음");
                 driver.ClickScript(searchBtn);
-                
-                //모든 데이터 가져오기
-                GetData(driver, "RPA");
 
-                Thread.Sleep(5000);
+                //모든 데이터 가져오기
+                while (true)
+                {
+                    try
+                    {
+                        GetData(driver, "RPA");
+                        var plus = driver.FindElement(By.Id("pagination")).FindElement(By.ClassName("default"));
+                        driver.ClickScript(plus);
+                        Thread.Sleep(2000);
+                        driver.SwitchTo().DefaultContent();
+                    }
+                    catch (NoSuchElementException)
+                    {
+                        Console.WriteLine("데이터 추가 완료");
+                        Thread.Sleep(5000);
+                        return;
+                    }
+                }
+
             }
-            
+
             // 아무 키나 누르면 종료
             Console.WriteLine("프로그램 종료");
             Console.ReadKey();
         }
+
 
 
         // driver를 Script 실행 인터페이스로 변환
@@ -80,6 +93,7 @@ namespace Training
                 var name = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[4]/div/a")).Text;
                 if (name.Contains(keyward))
                 {
+                    Console.WriteLine(name); //추가되는 데이터 이름
                     var announce = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[5]/div")).Text;
                     var demand = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[6]/div")).Text;
                     var deadLine = row.FindElement(By.XPath("//*[@id='resultForm']/div[2]/table/tbody/tr[" + index + "]/td[8]/div"));
@@ -102,9 +116,15 @@ namespace Training
                 string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);  // 바탕화면 경로
                 string path = Path.Combine(desktopPath, "장표.xlsx"); // 엑셀 파일 저장 경로
                 FileInfo file = new FileInfo(path);
+                ExcelPackage.LicenseContext = LicenseContext.Commercial;
+
 
                 using (ExcelPackage package = new ExcelPackage(file))
                 {
+                    if (package.Workbook.Worksheets.Count <= 0)
+                    {
+                        throw new Exception("엑셀 파일이 없습니다");
+                    }
                     ExcelWorksheet worksheet = package.Workbook.Worksheets[0];
                     var dimension = worksheet.Dimension;
                     int lastRow = dimension.End.Row;
@@ -118,17 +138,18 @@ namespace Training
                     worksheet.Cells[newRow, start++].Value = deadLine;
                     worksheet.Cells[newRow, start++].Value = DateTime.Now.ToString("yyyy/MM/dd hh:mm");
                     package.Save();
-                    Console.WriteLine("데이터가 성공적으로 추가되었습니다.");
                 }
             }
-            catch(InvalidOperationException err)
+            catch (InvalidOperationException err)
             {
                 Console.WriteLine("장표 엑셀 파일이 열려있을 확률이 높습니다.");
                 Console.WriteLine("err message: " + err);
+                throw new Exception();
             }
-            catch(IndexOutOfRangeException err)
+            catch (IndexOutOfRangeException err)
             {
                 Console.WriteLine("장표 파일이 바탕화면에 없습니다");
+                throw new Exception();
             }
         }
     }
